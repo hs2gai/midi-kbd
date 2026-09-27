@@ -1,0 +1,23 @@
+{
+  "name": "midi-kbd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Play a grand piano (Splendid Grand Piano SFZ) in the browser with a MIDI keyboard",
+  "scripts": {
+    "start": "node server.mjs",
+    "build": "node scripts/build.mjs",
+    "cf:deploy": "npm run build && wrangler deploy",
+    "cf:preview": "npm run build && wrangler versions upload",
+    "cf:dev": "npm run build && wrangler dev"
+  },
+  "keywords": [],
+  "author": "Hisatsugu",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "vexflow": "^5.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.136.3"
+  }
+}

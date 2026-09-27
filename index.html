@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Splendid Grand Piano — Web MIDI SFZ Sampler</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%2362b0ff'/><rect x='4' y='3' width='2' height='7' fill='%2314161a'/><rect x='8' y='3' width='2' height='7' fill='%2314161a'/></svg>"
+    />
+    <style>
+      :root {
+        --bg: #14161a;
+        --panel: #1e2228;
+        --panel-2: #262b33;
+        --line: #333a45;
+        --text: #dfe4ec;
+        --muted: #8b95a6;
+        --accent: #62b0ff;
+        --ok: #5bd48a;
+        --error: #ff7b7b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /* Elements with an explicit display beat the UA's [hidden]{display:none} on specificity,
+         so the hidden attribute stops working. Override it for all of them here. */
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 20px;
+        background: linear-gradient(#272d36, #1c2027);
+        border-bottom: 1px solid #000;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 15px;
+        font-weight: 600;
+        margin: 0;
+        letter-spacing: 0.02em;
+      }
+      h1 small {
+        display: block;
+        font-weight: 400;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      button {
+        background: var(--accent);
+        color: #06121f;
+        border: 0;
+        border-radius: 5px;
+        padding: 8px 18px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        font-weight: 400;
+        padding: 6px 12px;
+      }
+      button.ghost:hover {
+        color: var(--text);
+        border-color: var(--muted);
+      }
+      .status {
+        color: var(--muted);
+      }
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.error {
+        color: var(--error);
+      }
+      .spacer {
+        flex: 1;
+      }
+      .meters {
+        display: flex;
+        gap: 18px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .meters b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      #progress-bar {
+        height: 3px;
+        background: #000;
+      }
+      #progress {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.15s linear;
+      }
+
+      #ports {
+        padding: 8px 20px;
+        background: #191d23;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #ports b {
+        color: var(--text);
+      }
+
+      #ports .sep {
+        margin: 0 10px;
+        color: var(--line);
+      }
+      #ports .drop-hint {
+        color: #6d7686;
+      }
+      .link-btn {
+        background: none;
+        border: 0;
+        color: var(--accent);
+        font: inherit;
+        padding: 0 0 0 8px;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      #transport {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 20px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .transport-btn {
+        width: 34px;
+        height: 30px;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1;
+      }
+      #song-name {
+        max-width: 280px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 600;
+      }
+      #seek {
+        flex: 1;
+        height: 8px;
+        background: var(--panel-2);
+        border-radius: 4px;
+        cursor: pointer;
+        overflow: hidden;
+      }
+      #seek-fill {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+      }
+      #time {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      #drop-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        background: rgba(10, 14, 20, 0.86);
+        border: 3px dashed var(--accent);
+        color: var(--accent);
+        font-size: 20px;
+        font-weight: 600;
+        pointer-events: none;
+      }
+
+      #stage {
+        flex: 1;
+        min-height: 140px;
+        position: relative;
+        background: linear-gradient(#171a20, #1b1f26);
+        border-top: 1px solid var(--line);
+      }
+      /* canvas is a replaced element, so even when absolutely positioned, top/bottom/left/right
+         alone don't determine its size and its intrinsic size (width/height attributes) is used.
+         Then ResizeObserver -> attribute update -> re-measure feeds back and it grows without bound,
+         so always give its size in percent (the parent #stage's height is fixed by flex). */
+      #notefall,
+      #staffroll {
+        position: absolute;
+        top: 0;
+        left: 20px;
+        width: calc(100% - 40px);
+        height: 100%;
+        display: block;
+      }
+
+      #score {
+        position: absolute;
+        inset: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: #eef1f6;
+      }
+      .score-sheet {
+        position: relative;
+      }
+      /* VexFlow doesn't manage its own colors, so override them for a light score */
+      .score-sheet svg {
+        display: block;
+      }
+      .score-sheet svg path,
+      .score-sheet svg rect,
+      .score-sheet svg text {
+        fill: #1a1d23;
+        stroke: #1a1d23;
+      }
+      .score-cursor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 2px;
+        background: var(--accent);
+        opacity: 0.75;
+        pointer-events: none;
+        will-change: transform;
+      }
+      .score-message {
+        margin: 0;
+        padding: 24px 20px;
+        color: #5d6675;
+      }
+
+      .segmented {
+        display: flex;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        overflow: hidden;
+      }
+      .segmented button {
+        background: transparent;
+        color: var(--muted);
+        border: 0;
+        border-radius: 0;
+        padding: 5px 12px;
+        font: inherit;
+        font-size: 12px;
+        white-space: nowrap; /* don't wrap one character per line, like vertical text, at narrow widths */
+        cursor: pointer;
+      }
+      .segmented button.active {
+        background: var(--accent);
+        color: #06121f;
+        font-weight: 600;
+      }
+
+      /* With no presets, hide the separator too so it doesn't show as "| |" */
+      #presets[hidden] + #credit + .sep {
+        display: none;
+      }
+
+      /* Credit shown while playing a CC BY-style preset */
+      #credit {
+        margin-left: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #credit a {
+        color: inherit;
+      }
+
+      #presets {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 4px 8px;
+        font: inherit;
+        font-size: 12px;
+        max-width: 240px;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 12px;
+        padding: 16px 20px;
+        align-content: start;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px 14px;
+      }
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .knobs {
+        display: grid;
+        gap: 8px;
+      }
+      .knob {
+        display: grid;
+        grid-template-columns: 78px 1fr 58px;
+        align-items: center;
+        gap: 8px;
+      }
+      .knob-label {
+        font-size: 12px;
+        color: #b9c2d0;
+      }
+      .knob-label em {
+        display: block;
+        font-style: normal;
+        font-size: 9px;
+        color: #5f6979;
+      }
+      .knob output {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: var(--accent);
+      }
+      input[type="range"] {
+        width: 100%;
+        height: 4px;
+        appearance: none;
+        background: var(--panel-2);
+        border-radius: 2px;
+        outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+      }
+
+      #keyboard-wrap {
+        background: linear-gradient(#20252d, #14171c);
+        border-top: 1px solid #000;
+        padding: 14px 20px 20px;
+      }
+      #keyboard {
+        position: relative;
+        height: 130px;
+        user-select: none;
+        touch-action: none;
+      }
+      .key {
+        position: absolute;
+        top: 0;
+        border-radius: 0 0 3px 3px;
+      }
+      .key.white {
+        height: 100%;
+        background: linear-gradient(#fff, #e3e6ea);
+        border: 1px solid #9aa0a8;
+        z-index: 1;
+      }
+      .key.black {
+        height: 62%;
+        background: linear-gradient(#4a5058, #14171b);
+        border: 1px solid #000;
+        z-index: 2;
+      }
+      .key.white.active {
+        background: linear-gradient(#9fd0ff, #62b0ff);
+      }
+      .key.black.active {
+        background: linear-gradient(#3f7fbe, #1f5c96);
+      }
+      .key.white[data-label]::after {
+        content: attr(data-label);
+        position: absolute;
+        bottom: 3px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 8px;
+        color: #8d949d;
+      }
+      .hint {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      kbd {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 10px;
+      }
+
+      /* Collapsible bar for the parameters. Hidden at desktop widths */
+      #params > summary {
+        display: none;
+      }
+
+      @media (max-width: 640px) {
+        #params > summary {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          padding: 10px 12px;
+          background: var(--panel);
+          border-bottom: 1px solid var(--line);
+          color: var(--text);
+          font-weight: 600;
+          white-space: nowrap; /* keep the heading on one line and let the small text on the right be truncated */
+          cursor: pointer;
+          list-style: none;
+        }
+        #params > summary::-webkit-details-marker {
+          display: none;
+        }
+        #params > summary::before {
+          content: "▸";
+          color: var(--muted);
+        }
+        #params[open] > summary::before {
+          content: "▾";
+        }
+        #params > summary small {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 10px;
+          font-weight: 400;
+          letter-spacing: 0.08em;
+          color: var(--muted);
+        }
+        main {
+          padding: 12px;
+        }
+
+        /* The playback bar has 3 rows: controls and title / seek / view switch */
+        #transport {
+          flex-wrap: wrap;
+          gap: 8px 10px;
+          padding: 8px 12px;
+        }
+        #song-name {
+          flex: 1;
+          min-width: 0;
+          max-width: none;
+        }
+        #seek {
+          order: 1;
+          flex-basis: 100%;
+        }
+        #view-switch,
+        #transport .toggle {
+          order: 2;
+        }
+
+        /* Phones can't drop files, so don't show the hint */
+        #credit + .sep,
+        #ports .drop-hint {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Splendid Grand Piano <small>Web MIDI + SFZ サンプラー</small></h1>
+      <button id="start">▶ 開始</button>
+      <span id="status" class="status">「開始」を押すと音源を読み込みます</span>
+      <span class="spacer"></span>
+      <button id="reset" class="ghost" hidden title="保存された設定を消して初期値に戻す">設定を初期化</button>
+      <div class="meters">
+        <span>Voices <b id="voices">0</b></span>
+        <span>Memory <b id="memory">0 MB</b></span>
+        <span id="latency-meter" title="鍵盤を押してから音が出るまでの、音の出力側の遅延">Latency <b id="latency">—</b></span>
+      </div>
+    </header>
+
+    <div id="progress-bar"><div id="progress"></div></div>
+
+    <div id="ports">
+      MIDI IN: <b id="midi-ports">—</b>
+      <span class="sep">|</span>
+      <select id="presets" title="midi フォルダの中身" hidden>
+        <option value="">曲を選ぶ…</option>
+      </select>
+      <span id="credit" hidden></span>
+      <span class="sep">|</span>
+      <span class="drop-hint">.mid をドロップしても再生できます</span>
+      <button id="browse" class="link-btn">ファイルを選ぶ</button>
+      <input id="file-input" type="file" accept=".mid,.midi,audio/midi" hidden />
+    </div>
+
+    <div id="transport" hidden>
+      <button id="play" class="transport-btn" title="再生 / 一時停止">▶</button>
+      <button id="stop" class="transport-btn" title="停止">■</button>
+      <span id="song-name"></span>
+      <div id="seek" title="クリックでシーク"><div id="seek-fill"></div></div>
+      <span id="time">0:00 / 0:00</span>
+      <div class="segmented" id="view-switch">
+        <button data-view="notefall" class="active">ノート</button>
+        <button data-view="staff">五線譜</button>
+        <button data-view="score">楽譜</button>
+      </div>
+      <label class="toggle" title="ドラムをピアノで鳴らすと破綻するため既定で無視します">
+        <input type="checkbox" id="skip-drums" checked />
+        ch.10 を無視
+      </label>
+      <button id="eject" class="ghost" title="MIDI ファイルを閉じる">✕</button>
+    </div>
+
+    <!-- Collapsed at phone widths. At desktop widths main.js keeps it open and CSS hides the summary -->
+    <details id="params">
+      <summary>パラメータ <small>INSTRUMENT · REVERB · DAMPING · EQUALIZER · OUTPUT</small></summary>
+      <main>
+        <section class="panel">
+          <h2>INSTRUMENT</h2>
+          <div class="knobs" id="instrument-knobs"></div>
+        </section>
+        <div id="fx" style="display: contents"></div>
+      </main>
+    </details>
+
+    <div id="stage">
+      <canvas id="notefall"></canvas>
+      <canvas id="staffroll" hidden></canvas>
+      <div id="score" hidden></div>
+    </div>
+
+    <div id="keyboard-wrap">
+      <div id="keyboard"></div>
+      <p class="hint">
+        鍵盤はクリックでも鳴ります（上下位置がベロシティ）。PC キーボードは
+        <kbd>Z</kbd>–<kbd>M</kbd> が C3 オクターブ、<kbd>Q</kbd>–<kbd>I</kbd> が C4 オクターブ、<kbd>Space</kbd>
+        がサスティンペダルです。
+      </p>
+    </div>
+
+    <div id="drop-overlay" hidden>MIDI ファイルをドロップして再生</div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

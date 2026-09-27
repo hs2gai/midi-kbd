@@ -1,0 +1,4 @@
+# start.bat must be CRLF; with LF, parenthesized blocks cause syntax errors
+*.bat text eol=crlf
+*.mid binary
+*.midi binary

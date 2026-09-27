@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wrangler/
+# From Bach Central. Local-only, since we couldn't confirm permission to redistribute
+midi/bach/
+# Instrument location (clone SplendidGrandPiano here, or link it with a junction)
+/sfz
